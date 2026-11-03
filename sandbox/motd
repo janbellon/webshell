@@ -1,0 +1,7 @@
+
+  Bienvenue dans un conteneur Alpine Linux jetable.
+
+  · Il sera détruit dès que vous fermerez la page.
+  · Seuls /home/sandbox et /tmp sont modifiables.
+  · Outils : bash, vim, nano, git, curl, jq, python3, htop, tree…
+

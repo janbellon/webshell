@@ -1,0 +1,106 @@
+:root {
+  --bg: #0b0f14;
+  --panel: #10161d;
+  --line: #1e2731;
+  --text: #c9d1d9;
+  --muted: #6e7b88;
+  --green: #7ee787;
+  --amber: #e3b341;
+  --red: #ff7b72;
+  --mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+body {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand { display: flex; align-items: baseline; gap: 0.6rem; min-width: 0; }
+.brand .dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  align-self: center;
+}
+.brand .name { font-family: var(--mono); font-weight: 700; letter-spacing: 0.02em; }
+.brand .sub { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.meta { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
+.mono { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+.pill {
+  font-size: 12px;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.pill[data-state='connecting'] { color: var(--amber); }
+.pill[data-state='ready'] { color: var(--green); }
+.pill[data-state='ended'],
+.pill[data-state='error'] { color: var(--red); }
+
+button {
+  font: inherit;
+  font-size: 12px;
+  color: var(--bg);
+  background: var(--green);
+  border: 0;
+  border-radius: 6px;
+  padding: 0.3rem 0.75rem;
+  cursor: pointer;
+}
+button:hover { filter: brightness(1.1); }
+
+.stage {
+  position: relative;
+  min-height: 0;
+  padding: 0.5rem 0 0 0.75rem;
+}
+
+#terminal { height: 100%; }
+#terminal .xterm { height: 100%; }
+
+.notice {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 1rem;
+  text-align: center;
+  background: rgb(11 15 20 / 0.88);
+  backdrop-filter: blur(2px);
+}
+.notice[hidden] { display: none; }
+.notice p { max-width: 34rem; margin: 0; font-size: 15px; }
+.notice button { justify-self: center; }
+
+.foot {
+  padding: 0.35rem 1rem;
+  font-size: 11px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 640px) {
+  .brand .sub, #container { display: none; }
+}
