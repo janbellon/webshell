@@ -1,20 +1,23 @@
 services:
-  # Construit seulement l'image des bacs à sable (aucun conteneur n'est lancé).
-  sandbox-image:
+  webshell-sandbox-image:
     build: ./sandbox
     image: websh-sandbox:latest
     scale: 0
 
-  web:
+  webshell:
     build: ./server
     image: websh-server:latest
+    container_name: webshell
+    labels:
+      caddy: shell.int.enpos.fr
+      caddy.tls: /certs/int.enpos.fr/fullchain.pem /certs/int.enpos.fr/privkey.pem
+      caddy.reverse_proxy: "http://webshell:3000"
     depends_on:
-      - sandbox-image
-    ports:
-      - "3000:3000"
+      - webshell-sandbox-image
     volumes:
-      # Le serveur crée/détruit les conteneurs via l'API Docker de l'hôte.
       - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - caddy
     environment:
       SANDBOX_IMAGE: websh-sandbox:latest
       MAX_CONTAINERS_PER_IP: "10"
@@ -26,8 +29,12 @@ services:
       SESSION_MAX_SECONDS: "1800"  # 30 min max par session
       SESSION_IDLE_SECONDS: "600"  # 10 min sans frappe => fermeture
       TRUST_PROXY: "false"         # "true" derrière nginx/traefik
-      # ALLOWED_ORIGINS: https://shell.example.com
+      ALLOWED_ORIGINS: https://shell.int.enpos.fr
       # SANDBOX_RUNTIME: runsc     # gVisor, si installé sur l'hôte
     restart: unless-stopped
     # Laisse le temps de supprimer les conteneurs à l'arrêt
     stop_grace_period: 20s
+
+networks:
+  caddy:
+    external: true
