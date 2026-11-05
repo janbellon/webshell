@@ -5,8 +5,7 @@ services:
     scale: 0
 
   webshell:
-    build: ./server
-    image: websh-server:latest
+    image: ghcr.io/janbellon/webshell:v0.1.0
     container_name: webshell
     labels:
       caddy: shell.example.com
