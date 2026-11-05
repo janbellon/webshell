@@ -9,8 +9,8 @@ services:
     image: websh-server:latest
     container_name: webshell
     labels:
-      caddy: shell.int.enpos.fr
-      caddy.tls: /certs/int.enpos.fr/fullchain.pem /certs/int.enpos.fr/privkey.pem
+      caddy: shell.example.com
+      caddy.tls: /certs/example.com/fullchain.pem /certs/example.com/privkey.pem
       caddy.reverse_proxy: "http://webshell:3000"
     depends_on:
       - webshell-sandbox-image
@@ -25,14 +25,12 @@ services:
       SANDBOX_MEMORY: 256m
       SANDBOX_CPUS: "0.5"
       SANDBOX_PIDS: "128"
-      SANDBOX_NETWORK: none        # No network access from the sandboxes.
-      SESSION_MAX_SECONDS: "1800"  # 30 minutes at most per session.
-      SESSION_IDLE_SECONDS: "600"  # Closed after 10 minutes without input.
-      TRUST_PROXY: "true"          # Behind Caddy, the client IP is in X-Forwarded-For.
-      ALLOWED_ORIGINS: https://shell.int.enpos.fr
-      # SANDBOX_RUNTIME: runsc     # gVisor, if installed on the host.
+      SANDBOX_NETWORK: none
+      SESSION_MAX_SECONDS: "1800"
+      SESSION_IDLE_SECONDS: "600"
+      TRUST_PROXY: "true"
+      ALLOWED_ORIGINS: https://shell.example.com
     restart: unless-stopped
-    # Leaves time to remove the containers on shutdown.
     stop_grace_period: 20s
 
 networks:
