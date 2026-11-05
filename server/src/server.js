@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { pipeline } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 
@@ -16,9 +17,7 @@ const docker = new Docker(config.dockerSocket);
 const limiter = new ConcurrencyLimiter({ perKey: config.maxPerIp, total: config.maxTotal });
 const sessions = new Set();
 
-// ---------------------------------------------------------------------------
-// Fichiers statiques : liste blanche explicite, aucun accès arbitraire au disque.
-// ---------------------------------------------------------------------------
+// Explicit allowlist of static files: no arbitrary disk access.
 const nm = (p) => path.join(ROOT, 'node_modules', p);
 const STATIC = {
   '/': [path.join(ROOT, 'public/index.html'), 'text/html; charset=utf-8'],
@@ -40,8 +39,21 @@ const SECURITY_HEADERS = {
     "connect-src 'self' ws: wss:; img-src 'self' data:; frame-ancestors 'none'",
 };
 
+// Returns null for targets such as "//" that cannot be parsed.
+function parseUrl(req) {
+  try {
+    return new URL(req.url, 'http://localhost');
+  } catch {
+    return null;
+  }
+}
+
 const server = http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://localhost');
+  const url = parseUrl(req);
+  if (!url) {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY_HEADERS });
+    return res.end('Bad request');
+  }
 
   if (url.pathname === '/healthz') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -56,8 +68,8 @@ const server = http.createServer((req, res) => {
   const [file, type] = entry;
   fs.stat(file, (err, st) => {
     if (err) {
-      res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
-      return res.end(`Fichier manquant : ${path.relative(ROOT, file)} (npm install ?)`);
+      res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY_HEADERS });
+      return res.end(`Missing file: ${path.relative(ROOT, file)} (did you run npm install?)`);
     }
     res.writeHead(200, {
       'Content-Type': type,
@@ -66,17 +78,14 @@ const server = http.createServer((req, res) => {
       ...SECURITY_HEADERS,
     });
     if (req.method === 'HEAD') return res.end();
-    fs.createReadStream(file).pipe(res);
+    pipeline(fs.createReadStream(file), res, () => {});
   });
 });
 
-// ---------------------------------------------------------------------------
-// WebSocket
-// ---------------------------------------------------------------------------
 function clientIp(req) {
   if (config.trustProxy) {
-    // Dernière valeur de X-Forwarded-For = celle ajoutée par notre reverse proxy
-    // (les valeurs précédentes peuvent être forgées par le client).
+    // The last X-Forwarded-For value is the one added by our reverse proxy.
+    // Earlier values can be forged by the client.
     const xff = req.headers['x-forwarded-for'];
     if (xff) {
       const parts = xff.split(',').map((s) => s.trim()).filter(Boolean);
@@ -87,7 +96,7 @@ function clientIp(req) {
   return req.socket.remoteAddress;
 }
 
-// Empêche un site tiers d'ouvrir des sessions au nom de ses visiteurs.
+// Prevents third-party sites from opening sessions on behalf of their visitors.
 function originAllowed(req) {
   const origin = req.headers.origin;
   if (!origin) return false;
@@ -104,26 +113,34 @@ function originAllowed(req) {
 const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 
 server.on('upgrade', (req, socket, head) => {
-  const url = new URL(req.url, 'http://localhost');
-  if (!url.pathname.endsWith('/ws')) return socket.destroy();
+  // Node drops its own error handler from upgraded sockets.
+  socket.on('error', () => {});
+  const url = parseUrl(req);
+  if (!url?.pathname.endsWith('/ws')) return socket.destroy();
   if (!originAllowed(req)) {
-    log(`origine refusée : ${req.headers.origin}`);
-    socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
-    return socket.destroy();
+    log(`origin refused: ${req.headers.origin}`);
+    return socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
   }
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req, url));
 });
 
 wss.on('connection', (ws, req, url) => {
+  // Protocol errors are emitted here; without a listener they would crash the process.
+  ws.on('error', () => {});
+  ws.isAlive = true;
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
+
   const key = rateLimitKey(clientIp(req));
   const slot = limiter.acquire(key);
 
   if (!slot.ok) {
     const message =
       slot.reason === 'per_client'
-        ? `Limite atteinte : ${config.maxPerIp} terminaux ouverts simultanément au maximum. Fermez un onglet puis réessayez.`
-        : 'Le serveur est plein pour le moment. Réessayez dans quelques minutes.';
-    log(`refus (${slot.reason}) pour ${key}`);
+        ? `Limit reached: at most ${config.maxPerIp} terminals can be open at once. Close a tab and try again.`
+        : 'The server is full right now. Please try again in a few minutes.';
+    log(`refused (${slot.reason}) for ${key}`);
     ws.send(JSON.stringify({ type: 'error', code: 'rate_limited', message }));
     ws.close(4429, 'rate_limited');
     return;
@@ -150,7 +167,7 @@ wss.on('connection', (ws, req, url) => {
   session.start();
 });
 
-// Détecte les onglets disparus sans fermeture propre (réseau coupé, veille…).
+// Detects tabs that vanished without a clean close (network loss, sleep).
 const heartbeat = setInterval(() => {
   for (const ws of wss.clients) {
     if (ws.isAlive === false) {
@@ -161,32 +178,23 @@ const heartbeat = setInterval(() => {
     ws.ping();
   }
 }, 20_000);
-wss.on('connection', (ws) => {
-  ws.isAlive = true;
-  ws.on('pong', () => {
-    ws.isAlive = true;
-  });
-});
 
-// ---------------------------------------------------------------------------
-// Démarrage / arrêt
-// ---------------------------------------------------------------------------
 async function removeOrphans() {
   const containers = await docker.listContainers(`${LABEL_MANAGED}=true`);
   await Promise.all(containers.map((c) => docker.removeContainer(c.Id)));
-  if (containers.length) log(`${containers.length} conteneur(s) orphelin(s) supprimé(s)`);
+  if (containers.length) log(`removed ${containers.length} orphaned container(s)`);
 }
 
 async function main() {
   try {
     await docker.ping();
   } catch (err) {
-    console.error(`Docker injoignable via ${config.dockerSocket} : ${err.message}`);
+    console.error(`Cannot reach Docker at ${config.dockerSocket}: ${err.message}`);
     process.exit(1);
   }
   if (!(await docker.imageExists(config.image))) {
     console.error(
-      `Image "${config.image}" introuvable. Construisez-la : docker build -t ${config.image} ./sandbox`,
+      `Image "${config.image}" not found. Build it with: docker build -t ${config.image} ./sandbox`,
     );
     process.exit(1);
   }
@@ -194,8 +202,8 @@ async function main() {
 
   server.listen(config.port, config.host, () => {
     log(
-      `websh à l'écoute sur http://${config.host}:${config.port} — image ${config.image}, ` +
-        `max ${config.maxPerIp}/client et ${config.maxTotal} au total`,
+      `websh listening on http://${config.host}:${config.port}, image ${config.image}, ` +
+        `max ${config.maxPerIp} per client and ${config.maxTotal} overall`,
     );
   });
 }
@@ -204,7 +212,7 @@ let stopping = false;
 async function shutdown(signal) {
   if (stopping) return;
   stopping = true;
-  log(`${signal} reçu, arrêt et suppression des conteneurs…`);
+  log(`${signal} received, shutting down and removing containers`);
   clearInterval(heartbeat);
   server.close();
   const force = setTimeout(() => process.exit(1), 15_000);
@@ -216,4 +224,7 @@ async function shutdown(signal) {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
-main();
+main().catch((err) => {
+  console.error(`Startup failed: ${err.message}`);
+  process.exit(1);
+});

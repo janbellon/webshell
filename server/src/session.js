@@ -1,22 +1,23 @@
-// Une session = une connexion WebSocket = un conteneur jetable.
+// One session is one WebSocket connection and one disposable container.
 
 import crypto from 'node:crypto';
 import { WebSocket } from 'ws';
 
 export const LABEL_MANAGED = 'websh.managed';
 
-const MAX_BUFFERED = 1024 * 1024; // backpressure : 1 Mo en attente côté WebSocket
+// Backpressure threshold for data waiting to be written, in either direction.
+const MAX_BUFFERED = 1024 * 1024;
 
 function containerSpec(config, sessionId, clientKey) {
   const tmpfsOpts = `rw,nosuid,nodev,size=${config.tmpSize}`;
   const hostConfig = {
-    AutoRemove: true, // filet de sécurité : Docker supprime le conteneur dès qu'il s'arrête
-    Init: true, // petit init (tini) en PID 1 pour récolter les zombies
+    AutoRemove: true, // Safety net: Docker removes the container once it stops.
+    Init: true, // Runs tini as PID 1 to reap zombies.
     NetworkMode: config.network,
     Memory: config.memory,
-    MemorySwap: config.memory, // pas de swap
+    MemorySwap: config.memory, // No swap.
     NanoCpus: Math.round(config.cpus * 1e9),
-    PidsLimit: config.pids, // anti fork-bomb
+    PidsLimit: config.pids, // Fork bomb protection.
     CapDrop: ['ALL'],
     SecurityOpt: ['no-new-privileges'],
     ReadonlyRootfs: true,
@@ -71,8 +72,10 @@ export class Session {
 
     this.containerId = null;
     this.stream = null;
+    this.creating = false;
     this.started = false;
     this.ended = false;
+    this.cleaned = false;
     this.timers = [];
     this.resizeTimer = null;
     this.idleTimer = null;
@@ -99,10 +102,15 @@ export class Session {
       } finally {
         this.creating = false;
       }
-      if (this.ended) return this.cleanup(); // le client est parti pendant la création
-
-      this.stream = await this.docker.attach(this.containerId);
+      // end() defers cleanup to this method while the container is being created.
       if (this.ended) return this.cleanup();
+
+      const stream = await this.docker.attach(this.containerId);
+      if (this.ended) {
+        stream.destroy();
+        return this.cleanup();
+      }
+      this.stream = stream;
       this.wireStream();
 
       await this.docker.startContainer(this.containerId);
@@ -110,18 +118,20 @@ export class Session {
       if (this.ended) return this.cleanup();
 
       if (this.size) await this.applyResize();
+      if (this.ended) return this.cleanup();
     } catch (err) {
-      this.log(`erreur au démarrage : ${err.message}`);
+      this.log(`startup error: ${err.message}`);
+      if (this.ended) return this.cleanup();
       this.sendControl({
         type: 'error',
         code: 'start_failed',
-        message: "Impossible de démarrer le conteneur. Réessayez dans un instant.",
+        message: 'Could not start the container. Please try again in a moment.',
       });
       return this.end('start_failed');
     }
 
     const now = Date.now();
-    this.log(`conteneur ${this.containerId.slice(0, 12)} démarré pour ${this.clientKey}`);
+    this.log(`container ${this.containerId.slice(0, 12)} started for ${this.clientKey}`);
     this.sendControl({
       type: 'ready',
       container: this.containerId.slice(0, 12),
@@ -138,7 +148,7 @@ export class Session {
     stream.on('data', (chunk) => {
       if (this.ws.readyState !== WebSocket.OPEN) return;
       this.ws.send(chunk, { binary: true });
-      // Si le navigateur ne suit pas (ex. `yes`), on suspend la lecture du conteneur.
+      // Stop reading from the container when the browser cannot keep up (e.g. `yes`).
       if (this.ws.bufferedAmount > MAX_BUFFERED && !this.drainTimer) {
         stream.pause();
         this.drainTimer = setInterval(() => {
@@ -150,7 +160,7 @@ export class Session {
         }, 50);
       }
     });
-    // Le shell s'est terminé (`exit`, Ctrl-D…) => le conteneur s'arrête.
+    // The shell exited (`exit`, Ctrl-D), which stops the container.
     stream.on('end', () => this.end('shell_exited'));
     stream.on('close', () => this.end('shell_exited'));
     stream.on('error', () => this.end('stream_error'));
@@ -164,12 +174,13 @@ export class Session {
     } catch {
       return;
     }
-    if (msg.type === 'input' && typeof msg.data === 'string') {
+    if (msg?.type === 'input' && typeof msg.data === 'string') {
       if (this.stream && this.started) {
-        this.stream.write(msg.data);
+        // Drop input the shell is not reading rather than buffering it without bound.
+        if (this.stream.writableLength < MAX_BUFFERED) this.stream.write(msg.data);
         this.resetIdle();
       }
-    } else if (msg.type === 'resize') {
+    } else if (msg?.type === 'resize') {
       const cols = clampInt(msg.cols, 2, 500);
       const rows = clampInt(msg.rows, 2, 300);
       if (cols && rows) {
@@ -185,7 +196,7 @@ export class Session {
     try {
       await this.docker.resizeContainer(this.containerId, this.size.rows, this.size.cols);
     } catch {
-      /* le conteneur peut être en train de s'arrêter */
+      // The container may already be stopping.
     }
   }
 
@@ -196,16 +207,16 @@ export class Session {
     }
   }
 
-  // Fin de session : idempotent.
+  // Idempotent.
   end(reason) {
     if (this.ended) return this.cleanupPromise;
     this.ended = true;
-    this.log(`fin de session (${reason})`);
+    this.log(`session ended (${reason})`);
     this.sendControl({ type: 'exit', reason });
     if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
       this.ws.close(1000, reason);
     }
-    // Pendant la création, start() appellera cleanup() dès que l'ID sera connu.
+    // During creation, start() calls cleanup() once the outcome is known.
     this.cleanupPromise = this.creating ? Promise.resolve() : this.cleanup();
     return this.cleanupPromise;
   }
@@ -223,12 +234,12 @@ export class Session {
     try {
       if (this.containerId) {
         await this.docker.removeContainer(this.containerId);
-        this.log(`conteneur ${this.containerId.slice(0, 12)} supprimé`);
+        this.log(`container ${this.containerId.slice(0, 12)} removed`);
       }
     } catch (err) {
-      this.log(`échec de suppression de ${this.containerId}: ${err.message}`);
+      this.log(`failed to remove ${this.containerId}: ${err.message}`);
     } finally {
-      // Le créneau n'est libéré qu'une fois le conteneur réellement supprimé.
+      // The slot is only released once the container is really gone.
       this.release();
       this.onEnd(this);
     }

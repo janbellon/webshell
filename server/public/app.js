@@ -15,17 +15,23 @@ const term = new Terminal({
   fontSize: 14,
   scrollback: 5000,
   theme: {
-    background: '#0b0f14',
-    foreground: '#c9d1d9',
-    cursor: '#7ee787',
-    selectionBackground: '#264f78',
-    black: '#0b0f14',
-    green: '#7ee787',
-    brightGreen: '#a5f3a1',
+    background: '#000000',
+    foreground: '#e6e6e6',
+    cursor: '#ffd500',
+    cursorAccent: '#000000',
+    selectionBackground: 'rgba(255, 213, 0, 0.3)',
+    black: '#000000',
+    brightBlack: '#6e6e6e',
+    red: '#ff6b5e',
+    brightRed: '#ff9389',
+    green: '#9ece6a',
+    brightGreen: '#b9e08c',
+    yellow: '#ffd500',
+    brightYellow: '#ffe45c',
     blue: '#79c0ff',
     brightBlue: '#a5d6ff',
-    red: '#ff7b72',
-    yellow: '#e3b341',
+    white: '#e6e6e6',
+    brightWhite: '#ffffff',
   },
 });
 const fit = new FitAddon();
@@ -37,12 +43,15 @@ let ws = null;
 let alive = false;
 let countdown = null;
 
+// Stays under the server's 64 KiB frame limit even if every character is JSON-escaped.
+const INPUT_CHUNK = 8192;
+
 const REASONS = {
-  shell_exited: 'Le shell s’est terminé.',
-  idle: 'Session fermée pour inactivité.',
-  max_duration: 'Durée maximale de session atteinte.',
-  server_shutdown: 'Le serveur redémarre.',
-  start_failed: 'Le conteneur n’a pas pu démarrer.',
+  shell_exited: 'The shell exited.',
+  idle: 'Session closed due to inactivity.',
+  max_duration: 'Maximum session duration reached.',
+  server_shutdown: 'The server is restarting.',
+  start_failed: 'The container could not be started.',
 };
 
 function setStatus(state, label) {
@@ -59,6 +68,17 @@ function send(msg) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
 }
 
+// Large pastes are split so they do not exceed the frame limit and kill the session.
+function sendInput(data) {
+  for (let start = 0; start < data.length; ) {
+    let end = start + INPUT_CHUNK;
+    const last = data.charCodeAt(end - 1);
+    if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+    send({ type: 'input', data: data.slice(start, end) });
+    start = end;
+  }
+}
+
 function startCountdown(expiresAt) {
   clearInterval(countdown);
   timerEl.hidden = false;
@@ -66,8 +86,8 @@ function startCountdown(expiresAt) {
     const left = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
     const m = String(Math.floor(left / 60)).padStart(2, '0');
     const s = String(left % 60).padStart(2, '0');
-    timerEl.textContent = `expire dans ${m}:${s}`;
-    timerEl.title = 'Durée de vie maximale de la session';
+    timerEl.textContent = `expires in ${m}:${s}`;
+    timerEl.title = 'Maximum session lifetime';
   };
   tick();
   countdown = setInterval(tick, 1000);
@@ -78,30 +98,33 @@ function ended(message) {
   alive = false;
   clearInterval(countdown);
   timerEl.hidden = true;
-  setStatus('ended', 'Terminé');
+  setStatus('ended', 'Ended');
   restartBtn.hidden = false;
-  if (message) term.write(`\r\n\x1b[2m[${message} Le conteneur a été détruit.]\x1b[0m\r\n`);
+  if (message) term.write(`\r\n\x1b[2m[${message} The container has been destroyed.]\x1b[0m\r\n`);
 }
 
 function connect() {
+  ws?.close();
   notice.hidden = true;
   restartBtn.hidden = true;
   containerEl.hidden = true;
   term.reset();
   fit.fit();
-  setStatus('connecting', 'Création du conteneur…');
+  setStatus('connecting', 'Creating container…');
 
   const url = new URL('ws', location.href);
   url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   url.searchParams.set('cols', term.cols);
   url.searchParams.set('rows', term.rows);
 
-  ws = new WebSocket(url);
-  ws.binaryType = 'arraybuffer';
+  const socket = new WebSocket(url);
+  socket.binaryType = 'arraybuffer';
+  ws = socket;
   let exitReason = null;
   let rejected = false;
 
-  ws.onmessage = (ev) => {
+  socket.onmessage = (ev) => {
+    if (socket !== ws) return;
     if (typeof ev.data !== 'string') {
       term.write(new Uint8Array(ev.data));
       return;
@@ -109,29 +132,30 @@ function connect() {
     const msg = JSON.parse(ev.data);
     if (msg.type === 'ready') {
       alive = true;
-      setStatus('ready', 'Connecté');
+      setStatus('ready', 'Connected');
       containerEl.textContent = msg.container;
-      containerEl.title = 'Identifiant du conteneur';
+      containerEl.title = 'Container ID';
       containerEl.hidden = false;
       startCountdown(msg.expiresAt);
       term.focus();
     } else if (msg.type === 'error') {
       rejected = true;
-      setStatus('error', msg.code === 'rate_limited' ? 'Limite atteinte' : 'Erreur');
+      setStatus('error', msg.code === 'rate_limited' ? 'Limit reached' : 'Error');
       showNotice(msg.message);
     } else if (msg.type === 'exit') {
       exitReason = msg.reason;
     }
   };
 
-  ws.onclose = () => {
-    if (rejected) return;
-    ended(REASONS[exitReason] ?? 'Connexion perdue.');
+  socket.onclose = () => {
+    // A late close event from a previous socket must not end the current session.
+    if (rejected || socket !== ws) return;
+    ended(REASONS[exitReason] ?? 'Connection lost.');
   };
 }
 
 term.onData((data) => {
-  if (alive) send({ type: 'input', data });
+  if (alive) sendInput(data);
 });
 term.onResize(({ cols, rows }) => send({ type: 'resize', cols, rows }));
 
@@ -140,9 +164,9 @@ new ResizeObserver(() => fit.fit()).observe($('terminal'));
 restartBtn.addEventListener('click', connect);
 $('notice-retry').addEventListener('click', connect);
 
-// Fermer le WebSocket en quittant la page => le serveur détruit le conteneur.
+// Closing the WebSocket when leaving the page makes the server destroy the container.
 window.addEventListener('pagehide', () => ws?.close());
-// Retour arrière depuis le cache du navigateur : nouvelle session.
+// Coming back through the browser's back/forward cache starts a new session.
 window.addEventListener('pageshow', (ev) => {
   if (ev.persisted) connect();
 });

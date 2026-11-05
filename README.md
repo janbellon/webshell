@@ -4,6 +4,8 @@ Chaque chargement de page crée un conteneur Alpine isolé et ouvre un shell ded
 affiché avec xterm.js. Quand l'onglet est fermé (ou la connexion perdue), le conteneur
 est détruit.
 
+![Terminal websh dans le navigateur](docs/screenshot.png)
+
 ```
 Navigateur (xterm.js) ──WebSocket──▶ serveur Node ──API Docker (socket)──▶ conteneur Alpine
 ```
@@ -14,7 +16,9 @@ Navigateur (xterm.js) ──WebSocket──▶ serveur Node ──API Docker (so
 docker compose up -d --build
 ```
 
-Puis ouvrir http://localhost:3000.
+Le fichier compose publie le service via Caddy (labels `caddy*`) sur
+`shell.int.enpos.fr` : il suppose que le réseau externe `caddy` existe et n'expose
+aucun port sur l'hôte. Pour un autre domaine, adaptez les labels et `ALLOWED_ORIGINS`.
 
 `docker compose` construit deux images : `websh-sandbox` (l'image des bacs à sable,
 aucun conteneur n'est lancé pour elle) et `websh-server` (le serveur web).
@@ -23,8 +27,10 @@ Sans compose :
 
 ```bash
 docker build -t websh-sandbox:latest ./sandbox
-cd server && npm install && node src/server.js
+cd server && npm ci && node src/server.js
 ```
+
+Le serveur écoute alors sur http://localhost:3000.
 
 ## Arborescence
 
@@ -64,7 +70,7 @@ server/public/    page web (xterm.js)
 - Le créneau est réservé avant la création du conteneur et libéré seulement une
   fois le conteneur réellement supprimé : une rafale de connexions ne peut pas
   dépasser la limite.
-- Au-delà, la page affiche un message et un bouton « Réessayer ».
+- Au-delà, la page affiche un message et un bouton « Retry ».
 
 ## Isolation des conteneurs
 
@@ -78,6 +84,7 @@ server/public/    page web (xterm.js)
 | Processus | 128 max (anti fork-bomb) |
 | Réseau | aucun par défaut |
 | Flux de sortie | contre-pression : un `yes` ne sature pas la mémoire du serveur |
+| Flux d'entrée | au-delà de 1 Mo en attente, les frappes sont ignorées ; les gros collages sont découpés par le navigateur |
 | WebSocket | origine vérifiée (un site tiers ne peut pas ouvrir de sessions) |
 
 Pour une isolation plus forte, installer [gVisor](https://gvisor.dev) sur l'hôte et
@@ -127,7 +134,9 @@ Modifiez la liste `apk add` dans `sandbox/Dockerfile`, puis `docker compose buil
 Les visiteurs ne peuvent pas installer de paquets eux-mêmes (pas de root, système
 en lecture seule).
 
-## Derrière nginx
+## Derrière un reverse proxy
+
+Le `docker-compose.yml` fourni active déjà `TRUST_PROXY` pour Caddy. Avec nginx :
 
 ```nginx
 location / {
@@ -142,4 +151,5 @@ location / {
 ```
 
 Et `TRUST_PROXY: "true"` côté serveur, sinon toutes les connexions semblent venir de
-nginx et partagent la même limite de 10.
+du proxy et partagent la même limite de 10. N'activez cette option que si le serveur
+est joignable uniquement via le proxy, car l'en-tête peut sinon être forgé.

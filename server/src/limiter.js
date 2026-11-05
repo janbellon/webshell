@@ -1,6 +1,6 @@
-// Limite le nombre de conteneurs simultanés, par client et au total.
-// Le créneau est réservé de façon synchrone AVANT la création du conteneur,
-// pour qu'une rafale de connexions parallèles ne puisse pas dépasser la limite.
+// Limits concurrent containers, per client and overall.
+// A slot is reserved synchronously before the container is created, so a burst
+// of parallel connections cannot exceed the limit.
 
 import net from 'node:net';
 
@@ -12,9 +12,7 @@ export class ConcurrencyLimiter {
     this.active = 0;
   }
 
-  /**
-   * @returns {{ ok: true, release: () => void } | { ok: false, reason: 'per_client' | 'global' }}
-   */
+  // Returns { ok: true, release } or { ok: false, reason: 'per_client' | 'global' }.
   acquire(key) {
     const current = this.counts.get(key) ?? 0;
     if (current >= this.perKey) return { ok: false, reason: 'per_client' };
@@ -40,7 +38,7 @@ export class ConcurrencyLimiter {
   }
 }
 
-// Développe une IPv6 en 8 groupes hexadécimaux.
+// Expands an IPv6 address into 8 hexadecimal groups.
 function expandIPv6(ip) {
   const [head, tail] = ip.split('::');
   const h = head ? head.split(':') : [];
@@ -49,8 +47,8 @@ function expandIPv6(ip) {
   return [...h, ...fill, ...t].map((g) => g.padStart(4, '0'));
 }
 
-// Clé de rate limit pour une adresse : l'IPv4 telle quelle, et le préfixe /64
-// pour l'IPv6 (un client obtient en général tout un /64 et peut en changer à volonté).
+// Rate limit key for an address: IPv4 as is, and the /64 prefix for IPv6, since a
+// client usually owns a whole /64 and can rotate addresses within it at will.
 export function rateLimitKey(ip) {
   if (!ip) return 'unknown';
   let addr = ip.trim();

@@ -1,12 +1,11 @@
 :root {
-  --bg: #0b0f14;
-  --panel: #10161d;
-  --line: #1e2731;
-  --text: #c9d1d9;
-  --muted: #6e7b88;
-  --green: #7ee787;
-  --amber: #e3b341;
-  --red: #ff7b72;
+  --bg: #000;
+  --line: #2b2b2b;
+  --text: #e6e6e6;
+  --muted: #8c8c8c;
+  --accent: #ffd500;
+  --accent-dim: #b39500;
+  --red: #ff6b5e;
   --mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
 }
 
@@ -31,18 +30,18 @@ body {
   justify-content: space-between;
   gap: 1rem;
   padding: 0.6rem 1rem;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  border-bottom: 1px solid var(--accent);
 }
 
 .brand { display: flex; align-items: baseline; gap: 0.6rem; min-width: 0; }
 .brand .dot {
   width: 9px; height: 9px; border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 8px var(--green);
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
   align-self: center;
 }
-.brand .name { font-family: var(--mono); font-weight: 700; letter-spacing: 0.02em; }
+.brand .name { color: var(--accent); font-family: var(--mono); font-weight: 700; letter-spacing: 0.02em; }
 .brand .sub { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .meta { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
@@ -54,8 +53,8 @@ body {
   border-radius: 999px;
   border: 1px solid currentColor;
 }
-.pill[data-state='connecting'] { color: var(--amber); }
-.pill[data-state='ready'] { color: var(--green); }
+.pill[data-state='connecting'] { color: var(--accent-dim); }
+.pill[data-state='ready'] { color: var(--accent); }
 .pill[data-state='ended'],
 .pill[data-state='error'] { color: var(--red); }
 
@@ -63,13 +62,14 @@ button {
   font: inherit;
   font-size: 12px;
   color: var(--bg);
-  background: var(--green);
+  background: var(--accent);
   border: 0;
   border-radius: 6px;
   padding: 0.3rem 0.75rem;
   cursor: pointer;
 }
 button:hover { filter: brightness(1.1); }
+button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 
 .stage {
   position: relative;
@@ -87,7 +87,7 @@ button:hover { filter: brightness(1.1); }
   place-content: center;
   gap: 1rem;
   text-align: center;
-  background: rgb(11 15 20 / 0.88);
+  background: rgb(0 0 0 / 0.88);
   backdrop-filter: blur(2px);
 }
 .notice[hidden] { display: none; }

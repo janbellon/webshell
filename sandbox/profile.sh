@@ -1,8 +1,8 @@
-# Chargé par /etc/profile pour chaque shell de connexion.
-# (Le $HOME est un tmpfs vide : la configuration vit donc ici, pas dans ~/.bashrc.)
+# Sourced by /etc/profile for every login shell.
+# $HOME is an empty tmpfs, so the configuration lives here rather than in ~/.bashrc.
 
 if [ -n "$BASH_VERSION" ]; then
-  PS1='\[\e[1;32m\]\u@\h\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]\$ '
+  PS1='\[\e[1;33m\]\u@\h\[\e[0m\]:\[\e[1;37m\]\w\[\e[0m\]\$ '
   HISTFILE=/dev/null
   [ -r /usr/share/bash-completion/bash_completion ] && . /usr/share/bash-completion/bash_completion
 fi

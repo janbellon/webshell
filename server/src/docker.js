@@ -1,6 +1,6 @@
-// Client minimal pour l'API Docker Engine via le socket Unix.
-// Volontairement sans dépendance : ce processus a accès au socket Docker,
-// donc moins il embarque de code tiers, mieux c'est.
+// Minimal Docker Engine API client over the Unix socket.
+// Deliberately dependency-free: this process can reach the Docker socket,
+// so the less third-party code it loads, the better.
 
 import http from 'node:http';
 
@@ -34,6 +34,7 @@ export class Docker {
         },
         (res) => {
           const chunks = [];
+          res.on('error', reject);
           res.on('data', (c) => chunks.push(c));
           res.on('end', () => {
             const text = Buffer.concat(chunks).toString('utf8');
@@ -41,7 +42,7 @@ export class Docker {
             try {
               json = text ? JSON.parse(text) : null;
             } catch {
-              /* réponse non JSON */
+              // Not a JSON response.
             }
             if (res.statusCode >= 400) {
               reject(new DockerError(res.statusCode, json?.message || text || `HTTP ${res.statusCode}`));
@@ -85,7 +86,7 @@ export class Docker {
     await this.request('POST', `/containers/${id}/resize?h=${rows}&w=${cols}`);
   }
 
-  // Suppression forcée ; ignore « déjà supprimé » et « suppression en cours ».
+  // Force removal, ignoring "already removed" and "removal in progress".
   async removeContainer(id) {
     try {
       await this.request('DELETE', `/containers/${id}?force=true&v=true`);
@@ -101,8 +102,8 @@ export class Docker {
     return body;
   }
 
-  // Ouvre un flux bidirectionnel (stdin/stdout) brut sur le TTY du conteneur.
-  // Résout avec le socket « hijacké » par Docker.
+  // Opens a raw bidirectional stream on the container TTY.
+  // Resolves with the socket hijacked by Docker.
   attach(id) {
     return new Promise((resolve, reject) => {
       const req = http.request({
@@ -112,11 +113,13 @@ export class Docker {
         headers: { Host: 'docker', Connection: 'Upgrade', Upgrade: 'tcp' },
       });
       req.on('upgrade', (_res, socket, head) => {
+        // The timeout below only covers the handshake, not the session.
+        socket.setTimeout(0);
         if (head && head.length) socket.unshift(head);
         resolve(socket);
       });
       req.on('response', (res) => {
-        // Pas d'upgrade => erreur
+        // A regular response means the upgrade was refused.
         const chunks = [];
         res.on('data', (c) => chunks.push(c));
         res.on('end', () =>

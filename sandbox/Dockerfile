@@ -1,7 +1,7 @@
-# Image des conteneurs jetables ouverts pour chaque visiteur.
+# Image of the disposable containers opened for each visitor.
 FROM alpine:3.22
 
-# Paquets préinstallés (à adapter librement)
+# Preinstalled packages. Adjust freely.
 RUN apk add --no-cache \
       bash bash-completion coreutils util-linux procps findutils grep sed gawk \
       less ncurses file tree which \
@@ -10,7 +10,7 @@ RUN apk add --no-cache \
       htop python3 tzdata \
  && adduser -D -u 1000 -s /bin/bash sandbox
 
-# Retire les bits setuid/setgid (en plus de --cap-drop ALL et no-new-privileges)
+# Strip setuid and setgid bits, on top of --cap-drop ALL and no-new-privileges.
 RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null; true
 
 COPY profile.sh /etc/profile.d/websh.sh

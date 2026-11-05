@@ -1,7 +1,7 @@
 {
   "name": "websh-server",
   "version": "1.0.0",
-  "description": "Shell Linux éphémère dans le navigateur (xterm.js + un conteneur Docker par session)",
+  "description": "Disposable Linux shell in the browser (xterm.js and one Docker container per session)",
   "type": "module",
   "main": "src/server.js",
   "scripts": {

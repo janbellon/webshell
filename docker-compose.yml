@@ -25,14 +25,14 @@ services:
       SANDBOX_MEMORY: 256m
       SANDBOX_CPUS: "0.5"
       SANDBOX_PIDS: "128"
-      SANDBOX_NETWORK: none        # pas d'accès réseau depuis les bacs à sable
-      SESSION_MAX_SECONDS: "1800"  # 30 min max par session
-      SESSION_IDLE_SECONDS: "600"  # 10 min sans frappe => fermeture
-      TRUST_PROXY: "false"         # "true" derrière nginx/traefik
+      SANDBOX_NETWORK: none        # No network access from the sandboxes.
+      SESSION_MAX_SECONDS: "1800"  # 30 minutes at most per session.
+      SESSION_IDLE_SECONDS: "600"  # Closed after 10 minutes without input.
+      TRUST_PROXY: "true"          # Behind Caddy, the client IP is in X-Forwarded-For.
       ALLOWED_ORIGINS: https://shell.int.enpos.fr
-      # SANDBOX_RUNTIME: runsc     # gVisor, si installé sur l'hôte
+      # SANDBOX_RUNTIME: runsc     # gVisor, if installed on the host.
     restart: unless-stopped
-    # Laisse le temps de supprimer les conteneurs à l'arrêt
+    # Leaves time to remove the containers on shutdown.
     stop_grace_period: 20s
 
 networks:

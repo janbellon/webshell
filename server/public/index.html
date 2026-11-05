@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Web Shell — terminal Linux jetable</title>
+    <title>Web Shell - disposable Linux terminal</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="vendor/xterm.css" />
     <link rel="stylesheet" href="style.css" />
@@ -13,13 +13,13 @@
       <div class="brand">
         <span class="dot"></span>
         <span class="name">websh</span>
-        <span class="sub">Alpine Linux · conteneur jetable</span>
+        <span class="sub">Alpine Linux · disposable container</span>
       </div>
       <div class="meta">
         <span id="container" class="mono" hidden></span>
         <span id="timer" class="mono" hidden></span>
-        <span id="status" class="pill" data-state="connecting">Connexion…</span>
-        <button id="restart" type="button" hidden>Nouvelle session</button>
+        <span id="status" class="pill" data-state="connecting">Connecting…</span>
+        <button id="restart" type="button" hidden>New session</button>
       </div>
     </header>
 
@@ -27,12 +27,12 @@
       <div id="terminal"></div>
       <div id="notice" class="notice" hidden>
         <p id="notice-text"></p>
-        <button id="notice-retry" type="button">Réessayer</button>
+        <button id="notice-retry" type="button">Retry</button>
       </div>
     </main>
 
     <footer class="foot">
-      Le conteneur est détruit dès que vous quittez la page. Rien n'est conservé.
+      The container is destroyed as soon as you leave the page. Nothing is kept.
     </footer>
 
     <script type="module" src="app.js"></script>
