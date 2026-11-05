@@ -1,4 +1,4 @@
-# websh — a disposable Linux shell in the browser
+# websh : a disposable Linux shell in the browser
 
 websh gives every visitor a throwaway Linux shell in a web page. Each page load starts an isolated Alpine container and connects it to an xterm.js terminal over a WebSocket. The container is destroyed when the tab closes, the connection drops, or the session times out.
 
